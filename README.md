@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # music-server
 
 Simple music server that listens for JSON POST via HTTP, then relays playback information to the music client
@@ -17,3 +18,6 @@ music-server is written in Rust, so the Cargo toolchain is required for compilat
 git clone https://github.com/some100/music-server.git
 cargo build -r
 ```
+=======
+# music-server
+>>>>>>> 4699551 (Initial commit)

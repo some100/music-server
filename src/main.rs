@@ -36,8 +36,11 @@ struct Args {
 struct Msg {
     #[serde(skip_serializing)] // username is useless for passing onto client
     username: String,
+    #[serde(alias = "msgType")] // fe2io compat
     msg_type: String,
+    #[serde(alias = "audioUrl")]
     audio_url: Option<String>,
+    #[serde(alias = "statusType")]
     status_type: Option<String>,
 }
  
@@ -75,17 +78,7 @@ async fn main() -> Result<(), ServerError> {
     let tx_clone = tx.clone();
     tasks.spawn(ws_loop(tx_clone, args.websocket_url));
     tasks.spawn(http_listener(tx, args.http_url));
-    match tasks.join_next().await {
-        Some(Err(e)) => {
-            error!("{}", e);
-            return Err(ServerError::Join(e));
-        },
-        None => {
-            error!("Somehow, no tasks were spawned");
-            return Err(ServerError::Generic("No tasks spawned".to_owned()));
-        },
-        _ => warn!("At least one task exited, ending program"),
-    }
+    wait_for_tasks(tasks).await?;
     Ok(())
 }
  
@@ -204,4 +197,18 @@ async fn listen_message(write: &mut SplitSink<WebSocketStream<TcpStream>, Messag
     }
     Ok(())
 }
- 
+
+async fn wait_for_tasks(mut tasks: JoinSet<Result<(), ServerError>>) -> Result<(), ServerError> {
+    match tasks.join_next().await {
+        Some(Err(e)) => {
+            error!("{}", e);
+            return Err(ServerError::Join(e));
+        },
+        None => {
+            error!("Somehow, no tasks were spawned");
+            return Err(ServerError::Generic("No tasks spawned".to_owned()));
+        },
+        _ => warn!("At least one task exited, ending program"),
+    }
+    Ok(())
+}

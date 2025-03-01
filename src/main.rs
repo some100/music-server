@@ -21,6 +21,7 @@ use serde_json as json;
 use thiserror::Error;
 use log::{debug, info, warn, error};
  
+/// Music server that listens through HTTP POST
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -46,7 +47,7 @@ struct Msg {
  
  
 #[derive(Error, Debug)]
-pub (crate) enum ServerError {
+enum ServerError {
     #[error("WebSocket Error: {0}")]
     WebSocket(#[from] tungstenite::Error),
     #[error("Send Error: {0}")]
@@ -90,13 +91,7 @@ async fn accept_connection(listener: &TcpListener) -> Result<TcpStream, ServerEr
  
  
 async fn ws_loop(tx: broadcast::Sender<Msg>, websocket_url: String) -> Result<(), ServerError> {
-    let ws_listener = match TcpListener::bind(&websocket_url).await {
-        Ok(ws_listener) => ws_listener,
-        Err(e) => {
-            error!("{}", e);
-            return Err(ServerError::Io(e));
-        },
-    };
+    let ws_listener = TcpListener::bind(&websocket_url).await?;
     info!("WebSockets listening on {}", websocket_url);
     loop {
         match accept_connection(&ws_listener).await {
@@ -122,16 +117,9 @@ async fn http_listener(tx: broadcast::Sender<Msg>, http_url: String) -> Result<(
         });
     let server = warp::serve(post);
     let socket: SocketAddr = http_url.parse()?;
-    match server.try_bind_ephemeral(socket) {
-        Ok((_, server)) => {
-            info!("HTTP listening on {}", socket);
-            server.await;
-        },
-        Err(e) => {
-            error!("{}", e);
-            return Err(ServerError::Http(e));
-        },
-    }
+    let (socket, server) = server.try_bind_ephemeral(socket)?;
+    info!("HTTP listening on {}", socket);
+    server.await;
     Ok(())
 }
  
@@ -154,19 +142,16 @@ async fn handle_connection(client: TcpStream, rx: broadcast::Receiver<Msg>) -> R
     let username = read_username(&mut read).await?;
     info!("{} connected", &username);
    
-    tokio::spawn(async move {
-        let _ = listen_message(&mut write, rx, &username).await;
-    });
+    listen_message(&mut write, rx, &username).await?;
  
     Ok(())
 }
  
  
 async fn read_username(read: &mut SplitStream<WebSocketStream<TcpStream>>) -> Result<String, ServerError> {
-    let username = match read.next().await {
-        Some(response) => response?.to_string(),
-        None => return Err(ServerError::WebSocket(tungstenite::Error::ConnectionClosed)),
-    };
+    let username = read.next().await
+        .ok_or(ServerError::WebSocket(tungstenite::Error::ConnectionClosed))??
+        .to_string();
     debug!("Got username {}", username);
     Ok(username)
 }
@@ -176,7 +161,7 @@ async fn listen_message(write: &mut SplitSink<WebSocketStream<TcpStream>, Messag
     loop {
         match rx.recv().await {
             Ok(msg) => {
-                if msg.username.to_lowercase() == username.to_lowercase() {
+                if msg.username == username {
                     let msg = &json::to_string(&msg)?;
                     match write.send(Message::Text(msg.into())).await {
                         Err(e) => {

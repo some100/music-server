@@ -62,8 +62,8 @@ enum ServerError {
     Json(#[from] serde_json::Error),
     #[error("Join Error: {0}")]
     Join(#[from] task::JoinError),
-    #[error("Generic Error: {0}")]
-    Generic(String),
+    #[error("No tasks spawned")]
+    NoTasks(),
 }
 
 #[tokio::main]
@@ -111,7 +111,10 @@ async fn http_listener(tx: broadcast::Sender<Msg>, http_url: String) -> Result<(
             move |message: Msg| {
                 let tx = tx.clone();
                 async move {
-                    let _ = transmit_json(&tx, message);
+                    if let Err(e) = transmit_json(&tx, message) {
+                        error!("{}", e);
+                        return Err(warp::reject::reject());
+                    }
                     Ok::<_, warp::Rejection>(warp::reply())
                 }
         });
@@ -134,18 +137,18 @@ fn transmit_json(tx: &broadcast::Sender<Msg>, msg: Msg) -> Result<(), ServerErro
  
 async fn handle_connection(client: TcpStream, rx: broadcast::Receiver<Msg>) -> Result<(), ServerError> {
     let client = accept_async(client).await?;
-    let (mut write, mut read) = client.split();
+    let (write, read) = client.split();
 
-    let username = read_username(&mut read).await?;
+    let username = read_username(read).await?;
     info!("{} connected", &username);
    
-    listen_message(&mut write, rx, &username).await?;
+    listen_message(write, rx, &username).await?;
  
     Ok(())
 }
  
  
-async fn read_username(read: &mut SplitStream<WebSocketStream<TcpStream>>) -> Result<String, ServerError> {
+async fn read_username(mut read: SplitStream<WebSocketStream<TcpStream>>) -> Result<String, ServerError> {
     let username = read.next().await
         .ok_or(ServerError::WebSocket(tungstenite::Error::ConnectionClosed))??
         .to_string();
@@ -154,7 +157,7 @@ async fn read_username(read: &mut SplitStream<WebSocketStream<TcpStream>>) -> Re
 }
  
  
-async fn listen_message(write: &mut SplitSink<WebSocketStream<TcpStream>, Message>, mut rx: broadcast::Receiver<Msg>, username: &str) -> Result<(), ServerError> {
+async fn listen_message(mut write: SplitSink<WebSocketStream<TcpStream>, Message>, mut rx: broadcast::Receiver<Msg>, username: &str) -> Result<(), ServerError> {
     loop {
         if let Ok(msg) = rx.recv().await {
             if msg.username == username {
@@ -185,7 +188,7 @@ async fn wait_for_tasks(mut tasks: JoinSet<Result<(), ServerError>>) -> Result<(
         },
         None => {
             error!("Somehow, no tasks were spawned");
-            return Err(ServerError::Generic("No tasks spawned".to_owned()));
+            return Err(ServerError::NoTasks());
         },
         _ => warn!("At least one task exited, ending program"),
     }

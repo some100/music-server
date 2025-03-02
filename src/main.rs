@@ -3,6 +3,7 @@ use tokio::{
     net::{TcpStream, TcpListener},
     sync::broadcast,
     task::{self, JoinSet},
+    time::{sleep, Duration},
 };
 use tokio_tungstenite::{
     accept_async,
@@ -62,8 +63,12 @@ enum ServerError {
     Json(#[from] serde_json::Error),
     #[error("Join Error: {0}")]
     Join(#[from] task::JoinError),
+    #[error("Connection with {0} closed")]
+    Closed(String),
     #[error("No tasks spawned")]
     NoTasks(),
+    #[error("Failed to receive inputs")]
+    RecvClosed(),
 }
 
 #[tokio::main]
@@ -79,7 +84,14 @@ async fn main() -> Result<(), ServerError> {
     let tx_clone = tx.clone();
     tasks.spawn(ws_loop(tx_clone, args.websocket_url));
     tasks.spawn(http_listener(tx, args.http_url));
-    wait_for_tasks(tasks).await?;
+
+    tokio::select! {
+        _ = wait_for_tasks(&mut tasks) => (),
+        _ = tokio::signal::ctrl_c() => {
+            warn!("Received interrupt, exiting");
+            tasks.shutdown().await;
+        }
+    }
     Ok(())
 }
  
@@ -98,7 +110,10 @@ async fn ws_loop(tx: broadcast::Sender<Msg>, websocket_url: String) -> Result<()
             Ok(client) => {
                 tokio::spawn(handle_connection(client, tx.subscribe()));
             },
-            Err(e) => error!("{}", e),
+            Err(e) => {
+                error!("{}", e);
+                sleep(Duration::from_millis(500)).await;
+            },
         }
     }
 }
@@ -137,18 +152,18 @@ fn transmit_json(tx: &broadcast::Sender<Msg>, msg: Msg) -> Result<(), ServerErro
  
 async fn handle_connection(client: TcpStream, rx: broadcast::Receiver<Msg>) -> Result<(), ServerError> {
     let client = accept_async(client).await?;
-    let (write, read) = client.split();
+    let (write, mut read) = client.split();
 
-    let username = read_username(read).await?;
+    let username = read_username(&mut read).await?;
     info!("{} connected", &username);
    
-    listen_message(write, rx, &username).await?;
+    listen_message(read, write, rx, &username).await?;
  
     Ok(())
 }
  
  
-async fn read_username(mut read: SplitStream<WebSocketStream<TcpStream>>) -> Result<String, ServerError> {
+async fn read_username(read: &mut SplitStream<WebSocketStream<TcpStream>>) -> Result<String, ServerError> {
     let username = read.next().await
         .ok_or(ServerError::WebSocket(tungstenite::Error::ConnectionClosed))??
         .to_string();
@@ -157,30 +172,56 @@ async fn read_username(mut read: SplitStream<WebSocketStream<TcpStream>>) -> Res
 }
  
  
-async fn listen_message(mut write: SplitSink<WebSocketStream<TcpStream>, Message>, mut rx: broadcast::Receiver<Msg>, username: &str) -> Result<(), ServerError> {
+async fn listen_message(mut read: SplitStream<WebSocketStream<TcpStream>>, mut write: SplitSink<WebSocketStream<TcpStream>, Message>, mut rx: broadcast::Receiver<Msg>, username: &str) -> Result<(), ServerError> {
     loop {
-        if let Ok(msg) = rx.recv().await {
-            if msg.username == username {
-                let msg = &json::to_string(&msg)?;
-                match write.send(Message::Text(msg.into())).await {
-                    Err(e) => {
-                        error!("{}", e);
-                        return Err(ServerError::WebSocket(e));
-                    },
-                    _ => {
-                        debug!("Got message {} for {}", msg, username);
-                    },
+        tokio::select! {
+            result = check_message(&mut write, &mut rx, username) => {
+                if let Err(e) = result {
+                    error!("{}", e);
+                    break;
                 }
-            }
-        } else {
-            warn!("Sender disconnected");
-            break;
+            },
+            result = check_disconnect(&mut read, username) => {
+                if let Err(e) = result { 
+                    warn!("{}", e);
+                    break;
+                };
+            },
         }
+    }
+    write.close().await?;
+    Ok(())
+}
+
+async fn check_message(write: &mut SplitSink<WebSocketStream<TcpStream>, Message>, rx: &mut broadcast::Receiver<Msg>, username: &str) -> Result<(), ServerError> {
+    if let Ok(msg) = rx.recv().await {
+        if msg.username == username { // checks if username in message is same as client's username
+            let msg = &json::to_string(&msg)?;
+            match write.send(Message::Text(msg.into())).await {
+                Err(e) => {
+                    error!("{}", e);
+                    return Err(ServerError::WebSocket(e));
+                },
+                _ => {
+                    debug!("Got message {} for {}", msg, username);
+                },
+            }
+        }
+    } else {
+        warn!("No available senders (likely that HTTP listener exited)");
+        return Err(ServerError::RecvClosed());
     }
     Ok(())
 }
 
-async fn wait_for_tasks(mut tasks: JoinSet<Result<(), ServerError>>) -> Result<(), ServerError> {
+async fn check_disconnect(read: &mut SplitStream<WebSocketStream<TcpStream>>, username: &str) -> Result<(), ServerError> {
+    if (read.next().await).is_none() {
+        return Err(ServerError::Closed(username.to_owned()));
+    }
+    Ok(())
+}
+
+async fn wait_for_tasks(tasks: &mut JoinSet<Result<(), ServerError>>) -> Result<(), ServerError> {
     match tasks.join_next().await {
         Some(Err(e)) => {
             error!("{}", e);

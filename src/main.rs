@@ -111,7 +111,7 @@ async fn http_listener(tx: broadcast::Sender<Msg>, http_url: String) -> Result<(
             move |message: Msg| {
                 let tx = tx.clone();
                 async move {
-                    let _ = transmit_json(&tx, message).await;
+                    let _ = transmit_json(&tx, message);
                     Ok::<_, warp::Rejection>(warp::reply())
                 }
         });
@@ -123,13 +123,10 @@ async fn http_listener(tx: broadcast::Sender<Msg>, http_url: String) -> Result<(
     Ok(())
 }
  
-async fn transmit_json(tx: &broadcast::Sender<Msg>, msg: Msg) -> Result<(), ServerError> {
-    match tx.send(msg) {
-        Err(e) => {
-            error!("{} (this is probably because a message was POSTed but no one is connected)", e);
-            return Err(ServerError::Send(e));
-        },
-        _ => (),
+fn transmit_json(tx: &broadcast::Sender<Msg>, msg: Msg) -> Result<(), ServerError> {
+    if let Err(e) = tx.send(msg) {
+        error!("{} (this is probably because a message was POSTed but no one is connected)", e);
+        return Err(ServerError::Send(e));
     }
     Ok(())
 }
@@ -159,25 +156,22 @@ async fn read_username(read: &mut SplitStream<WebSocketStream<TcpStream>>) -> Re
  
 async fn listen_message(write: &mut SplitSink<WebSocketStream<TcpStream>, Message>, mut rx: broadcast::Receiver<Msg>, username: &str) -> Result<(), ServerError> {
     loop {
-        match rx.recv().await {
-            Ok(msg) => {
-                if msg.username == username {
-                    let msg = &json::to_string(&msg)?;
-                    match write.send(Message::Text(msg.into())).await {
-                        Err(e) => {
-                            error!("{}", e);
-                            return Err(ServerError::WebSocket(e));
-                        },
-                        _ => {
-                            debug!("Got message {} for {}", msg, username);
-                        },
-                    }
+        if let Ok(msg) = rx.recv().await {
+            if msg.username == username {
+                let msg = &json::to_string(&msg)?;
+                match write.send(Message::Text(msg.into())).await {
+                    Err(e) => {
+                        error!("{}", e);
+                        return Err(ServerError::WebSocket(e));
+                    },
+                    _ => {
+                        debug!("Got message {} for {}", msg, username);
+                    },
                 }
-            },
-            Err(_) => {
-                warn!("Sender disconnected");
-                break;
-            },
+            }
+        } else {
+            warn!("Sender disconnected");
+            break;
         }
     }
     Ok(())

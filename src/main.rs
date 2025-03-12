@@ -1,14 +1,14 @@
 mod http;
 mod websocket;
+mod error;
 
+use crate::error::ServerError;
 use tokio::{
     sync::broadcast,
-    task::{self, JoinSet},
+    task::JoinSet,
 };
-use tokio_tungstenite::tungstenite;
 use clap::Parser;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 use log::{warn, error};
  
 /// Music server that listens through HTTP POST
@@ -33,31 +33,6 @@ struct Msg {
     audio_url: Option<String>,
     #[serde(rename = "statusType", alias = "status_type")]
     status_type: Option<String>,
-}
- 
- 
-#[derive(Error, Debug)]
-enum ServerError {
-    #[error("WebSocket Error: {0}")]
-    WebSocket(#[from] tungstenite::Error),
-    #[error("Send Error: {0}")]
-    Send(#[from] broadcast::error::SendError<Msg>),
-    #[error("IO Error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("Address Parse Error: {0}")]
-    AddrParse(#[from] std::net::AddrParseError),
-    #[error("HTTP Error: {0}")]
-    Http(#[from] warp::Error),
-    #[error("JSON Error: {0}")]
-    Json(#[from] serde_json::Error),
-    #[error("Join Error: {0}")]
-    Join(#[from] task::JoinError),
-    #[error("Connection with {0} closed")]
-    Closed(String),
-    #[error("No tasks spawned")]
-    NoTasks(),
-    #[error("Failed to receive inputs")]
-    RecvClosed(),
 }
 
 #[tokio::main]

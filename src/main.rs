@@ -1,16 +1,13 @@
+mod error;
 mod http;
 mod websocket;
-mod error;
 
 use crate::error::ServerError;
-use tokio::{
-    sync::broadcast,
-    task::JoinSet,
-};
 use clap::Parser;
+use log::{error, warn};
 use serde::{Deserialize, Serialize};
-use log::{warn, error};
- 
+use tokio::{sync::broadcast, task::JoinSet};
+
 /// Music server that listens through HTTP POST
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -62,13 +59,13 @@ async fn main() -> Result<(), ServerError> {
 async fn wait_for_tasks(tasks: &mut JoinSet<Result<(), ServerError>>) -> Result<(), ServerError> {
     match tasks.join_next().await {
         Some(Err(e)) => {
-            error!("{}", e);
+            error!("{e}");
             return Err(ServerError::Join(e));
-        },
+        }
         None => {
             error!("Somehow, no tasks were spawned");
             return Err(ServerError::NoTasks());
-        },
+        }
         _ => warn!("At least one task exited, ending program"),
     }
     Ok(())

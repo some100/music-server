@@ -10,20 +10,20 @@ Simple music server that listens for JSON POST via HTTP, then relays playback in
 ## Usage
 
 Run `music-server`. By default, this program will listen for clients through port 8081 on WebSockets, and POST requests through port 8082 on HTTP. For extra configuration options, run `music-server --help`. To send a music URL or status update, POST with JSON with the format:
-```
+```json
 {
-    "username":"a",
-    "msg_type":"b",
-    "audio_url":"c",
-    "status_type":"d"
+    "username":"foo",
+    "msg_type":"bar",
+    "audio_url":"baz",
+    "status_type":"qux"
 }
 ```
-- `username` is the player's username, and it is a required field.
-- `msg_type` is the type of the message, and can be one of "bgm" or "gameStatus". It is also required.
+- `username` is the player's username, and it is a required field. This is case-sensitive.
+- `msg_type` is the type of the message, and can be one of "bgm" or "gameStatus". It is also required. 
 - `audio_url` is the URL that points to the audio. It is required only if msg_type == "bgm".
 - `status_type` is the changed status of the player. It is required only if msg_type == "gameStatus". 
 
-Optionally, you can also send the message in lowerCamelCase, for compatibility with FE2.io. This is intended to be used with [fe2io-rs](https://github.com/some100/fe2io-rs), which despite the name also works with this program.
+Optionally, you can also send the message in lowerCamelCase. This is intended to be used with [fe2io-rs](https://github.com/some100/fe2io-rs), which also works with this program.
 
 ## Use case
 

@@ -3,7 +3,7 @@
 > [!NOTE]
 > This was originally intended to serve as a replacement to TRIA's manual audio verification. I attempted to create a system that would functionally be very similar to FE2.io, being a server that interfaces with WebSockets and relays audio URLs to clients based on username. However after I had finished implementing the entire backend (including fe2io-rs) and moved onto trying to interface with TRIA maps, I found out that Runtime blocks HTTPService making TRIA maps basically sandboxed from the outside world entirely. This mainly exists as for archival purposes now, or for random updates to the code structure.
 > 
-> Also in the unlikely case that TRIA's Runtime allows PostAsync in the future (which is really all that is needed for this prograam to work), this would be able to serve as an FE2.io-like server for any Flood Escape game
+> Also in the unlikely case that TRIA's Runtime allows PostAsync in the future (which is really all that is needed for this program to work), this would be able to serve as an FE2.io-like server for any Flood Escape game
 
 Simple music server that listens for JSON POST via HTTP, then relays playback information to the music client
 

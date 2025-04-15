@@ -27,7 +27,7 @@ pub async fn ws_loop(tx: Sender<Msg>, websocket_url: String) -> Result<(), Serve
             }
         };
         let rx = tx.subscribe();
-        tokio::spawn(async {
+        tokio::spawn(async move {
             if let Err(e) = handle_connection(client, rx).await {
                 error!("{e}");
             }
@@ -60,7 +60,8 @@ async fn read_username(
         .next()
         .await
         .ok_or(ServerError::WebSocket(tungstenite::Error::ConnectionClosed))??
-        .to_string();
+        .to_text()?
+        .to_owned();
     debug!("Got username {username}");
     Ok(username)
 }
@@ -98,7 +99,6 @@ async fn check_message(
 ) -> Result<(), ServerError> {
     let msg = rx.recv().await.map_err(|_| ServerError::RecvClosed)?; // in theory RecvError::Lagged can occur, however since channel capacity is so big we shouldn't be too concerned
     if msg.username == username {
-        // checks if username in message is same as client's username
         let msg = &serde_json::to_string(&msg)?;
         write.send(Message::Text(msg.into())).await?;
         debug!("Got message {msg} for {username}");

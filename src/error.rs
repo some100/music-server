@@ -9,10 +9,6 @@ pub enum ServerError {
     Send(#[from] tokio::sync::broadcast::error::SendError<Msg>),
     #[error("IO Error: {0}")]
     Io(#[from] std::io::Error),
-    #[error("Address Parse Error: {0}")]
-    AddrParse(#[from] std::net::AddrParseError),
-    #[error("HTTP Error: {0}")]
-    Http(#[from] warp::Error),
     #[error("JSON Error: {0}")]
     Json(#[from] serde_json::Error),
     #[error("Join Error: {0}")]

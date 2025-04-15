@@ -41,7 +41,7 @@ async fn main() -> Result<(), ServerError> {
 
     let args = Args::parse();
 
-    let (tx, _) = broadcast::channel(64);
+    let (tx, _) = broadcast::channel(128);
     let tx_clone = tx.clone();
     tasks.spawn(websocket::ws_loop(tx_clone, args.websocket_url));
     tasks.spawn(http::http_listener(tx, args.http_url));
@@ -64,7 +64,7 @@ async fn wait_for_tasks(tasks: &mut JoinSet<Result<(), ServerError>>) -> Result<
         }
         None => {
             error!("Somehow, no tasks were spawned");
-            return Err(ServerError::NoTasks());
+            return Err(ServerError::NoTasks);
         }
         _ => warn!("At least one task exited, ending program"),
     }

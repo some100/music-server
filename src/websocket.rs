@@ -3,7 +3,7 @@ use futures_util::{
     SinkExt, StreamExt,
     stream::{SplitSink, SplitStream},
 };
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::broadcast::{Receiver, Sender},
@@ -20,7 +20,12 @@ pub async fn ws_loop(tx: Sender<Msg>, websocket_url: String) -> Result<(), Serve
     loop {
         match accept_connection(&ws_listener).await {
             Ok(client) => {
-                tokio::spawn(handle_connection(client, tx.subscribe()));
+                let rx = tx.subscribe();
+                tokio::spawn(async {
+                    if let Err(e) = handle_connection(client, rx).await {
+                        error!("{e}");
+                    }
+                });
             }
             Err(e) => {
                 error!("{e}");
@@ -67,19 +72,19 @@ async fn listen_message(
     username: &str,
 ) -> Result<(), ServerError> {
     loop {
-        tokio::select! {
-            result = check_message(&mut write, &mut rx, username) => {
-                if let Err(e) = result {
-                    error!("{e}");
-                    break;
+        let result = tokio::select! {
+            result = check_message(&mut write, &mut rx, username) => result,
+            result = async {
+                match read.next().await {
+                    Some(Err(e)) => Err(ServerError::WebSocket(e)),
+                    None => Err(ServerError::Closed(username.to_owned())),
+                    _ => Ok(())
                 }
-            },
-            result = check_disconnect(&mut read, username) => {
-                if let Err(e) = result {
-                    warn!("{e}");
-                    break;
-                };
-            },
+            } => result,
+        };
+        if let Err(e) = result {
+            error!("{e}");
+            break;
         }
     }
     write.close().await?;
@@ -91,28 +96,12 @@ async fn check_message(
     rx: &mut Receiver<Msg>,
     username: &str,
 ) -> Result<(), ServerError> {
-    let Ok(msg) = rx.recv().await else {
-        warn!("No available senders (likely that HTTP listener exited)");
-        return Err(ServerError::RecvClosed());
-    };
+    let msg = rx.recv().await.map_err(|_| ServerError::RecvClosed)?; // in theory RecvError::Lagged can occur, however since channel capacity is so big we shouldn't be too concerned
     if msg.username == username {
         // checks if username in message is same as client's username
         let msg = &serde_json::to_string(&msg)?;
-        if let Err(e) = write.send(Message::Text(msg.into())).await {
-            error!("{e}");
-            return Err(ServerError::WebSocket(e));
-        }
+        write.send(Message::Text(msg.into())).await?;
         debug!("Got message {msg} for {username}");
-    }
-    Ok(())
-}
-
-async fn check_disconnect(
-    read: &mut SplitStream<WebSocketStream<TcpStream>>,
-    username: &str,
-) -> Result<(), ServerError> {
-    if (read.next().await).is_none() {
-        return Err(ServerError::Closed(username.to_owned()));
     }
     Ok(())
 }

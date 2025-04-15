@@ -20,7 +20,7 @@ pub enum ServerError {
     #[error("Connection with {0} closed")]
     Closed(String),
     #[error("No tasks spawned")]
-    NoTasks(),
-    #[error("Failed to receive inputs")]
-    RecvClosed(),
+    NoTasks,
+    #[error("No available listeners (likely HTTP listener exited)")]
+    RecvClosed,
 }

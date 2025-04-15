@@ -18,20 +18,20 @@ pub async fn ws_loop(tx: Sender<Msg>, websocket_url: String) -> Result<(), Serve
     let ws_listener = TcpListener::bind(&websocket_url).await?;
     info!("WebSockets listening on {websocket_url}");
     loop {
-        match accept_connection(&ws_listener).await {
-            Ok(client) => {
-                let rx = tx.subscribe();
-                tokio::spawn(async {
-                    if let Err(e) = handle_connection(client, rx).await {
-                        error!("{e}");
-                    }
-                });
-            }
+        let client = match accept_connection(&ws_listener).await {
+            Ok(client) => client,
             Err(e) => {
                 error!("{e}");
                 sleep(Duration::from_millis(500)).await;
+                continue;
             }
-        }
+        };
+        let rx = tx.subscribe();
+        tokio::spawn(async {
+            if let Err(e) = handle_connection(client, rx).await {
+                error!("{e}");
+            }
+        });
     }
 }
 

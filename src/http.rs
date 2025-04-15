@@ -1,14 +1,7 @@
 use crate::{Msg, ServerError};
+use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::post};
 use log::{error, info};
 use tokio::{net::TcpListener, sync::broadcast::Sender};
-use axum::{
-    routing::post,
-    response::IntoResponse,
-    extract::State,
-    http::StatusCode,
-    Json, Router,
-};
-
 
 #[derive(Clone)]
 struct AppState {
@@ -16,9 +9,7 @@ struct AppState {
 }
 
 pub async fn http_listener(tx: Sender<Msg>, http_url: String) -> Result<(), ServerError> {
-    let state = AppState {
-        tx,
-    };
+    let state = AppState { tx };
     let app = Router::new()
         .route("/", post(post_handler))
         .with_state(state);
@@ -28,13 +19,10 @@ pub async fn http_listener(tx: Sender<Msg>, http_url: String) -> Result<(), Serv
     Ok(())
 }
 
-async fn post_handler(
-    State(state): State<AppState>,
-    Json(msg): Json<Msg>
-) -> impl IntoResponse {
+async fn post_handler(State(state): State<AppState>, Json(msg): Json<Msg>) -> impl IntoResponse {
     if let Err(e) = state.tx.send(msg) {
         error!("{e}");
-        return StatusCode::INTERNAL_SERVER_ERROR
+        return StatusCode::INTERNAL_SERVER_ERROR;
     };
     StatusCode::ACCEPTED
 }

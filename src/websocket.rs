@@ -3,7 +3,6 @@ use futures_util::{
     SinkExt, StreamExt,
     stream::{SplitSink, SplitStream},
 };
-use log::{debug, error, info};
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::broadcast::{Receiver, Sender},
@@ -13,6 +12,7 @@ use tokio_tungstenite::{
     WebSocketStream, accept_async,
     tungstenite::{self, Message},
 };
+use tracing::{debug, error, info};
 
 pub async fn ws_loop(tx: Sender<Msg>, websocket_url: String) -> Result<(), ServerError> {
     let ws_listener = TcpListener::bind(&websocket_url).await?;

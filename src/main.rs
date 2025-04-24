@@ -4,9 +4,9 @@ mod websocket;
 
 use crate::error::ServerError;
 use clap::Parser;
-use log::{error, warn};
 use serde::{Deserialize, Serialize};
 use tokio::{sync::broadcast, task::JoinSet};
+use tracing::{Level, error, subscriber, warn};
 
 /// Music server that listens through HTTP POST
 #[derive(Parser)]
@@ -36,8 +36,10 @@ struct Msg {
 async fn main() -> Result<(), ServerError> {
     let mut tasks = JoinSet::new();
 
-    let env = env_logger::Env::default().filter_or("LOG_LEVEL", "info");
-    env_logger::init_from_env(env);
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(Level::INFO)
+        .finish();
+    subscriber::set_global_default(subscriber)?;
 
     let args = Args::parse();
 

@@ -1,7 +1,7 @@
 use crate::{Msg, ServerError};
 use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::post};
-use log::{error, info};
 use tokio::{net::TcpListener, sync::broadcast::Sender};
+use tracing::{error, info};
 
 #[derive(Clone)]
 struct AppState {
@@ -23,6 +23,6 @@ async fn post_handler(State(state): State<AppState>, Json(msg): Json<Msg>) -> im
     if let Err(e) = state.tx.send(msg) {
         error!("{e}");
         return StatusCode::INTERNAL_SERVER_ERROR;
-    };
+    }
     StatusCode::ACCEPTED
 }

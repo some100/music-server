@@ -15,10 +15,12 @@ pub enum ServerError {
     Join(#[from] tokio::task::JoinError),
     #[error("Failed to set log subscriber as global default")]
     Subscriber(#[from] tracing::subscriber::SetGlobalDefaultError),
+    #[error("MPSC Channel Error: {0}")]
+    Channel(#[from] channelmap::Error<Msg>),
     #[error("Connection with {0} closed")]
     Closed(String),
     #[error("No tasks spawned")]
     NoTasks,
-    #[error("No available listeners (likely HTTP listener exited)")]
-    RecvClosed,
+    #[error("Channel closed (likely HTTP listener exited)")]
+    ChannelClosed,
 }

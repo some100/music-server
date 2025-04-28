@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 axum = "0.8.3"
+channelmap = "0.1.0"
 clap = { version = "4.5.31", features = ["derive"] }
 futures-util = { version = "0.3.31", default-features = false }
 serde = { version = "1.0.218", features = ["derive"] }

@@ -5,8 +5,9 @@ mod websocket;
 use crate::error::ServerError;
 use clap::Parser;
 use serde::{Deserialize, Serialize};
-use tokio::{sync::broadcast, task::JoinSet};
 use tracing::{Level, error, subscriber, warn};
+use tokio::task::JoinSet;
+use channelmap::ChannelMap;
 
 /// Music server that listens through HTTP POST
 #[derive(Parser)]
@@ -43,10 +44,9 @@ async fn main() -> Result<(), ServerError> {
 
     let args = Args::parse();
 
-    let (tx, _) = broadcast::channel(128);
-    let tx_clone = tx.clone();
-    tasks.spawn(websocket::ws_loop(tx_clone, args.websocket_url));
-    tasks.spawn(http::http_listener(tx, args.http_url));
+    let channels = ChannelMap::new();
+    tasks.spawn(websocket::ws_loop(channels.clone(), args.websocket_url));
+    tasks.spawn(http::http_listener(channels, args.http_url));
 
     tokio::select! {
         _ = wait_for_tasks(&mut tasks) => (),

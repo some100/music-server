@@ -1,11 +1,11 @@
 use crate::{Msg, ServerError};
 use futures_util::{
-    SinkExt, StreamExt,
+    SinkExt as _, StreamExt as _,
     stream::{SplitSink, SplitStream},
 };
 use tokio::{
     net::{TcpListener, TcpStream},
-    sync::broadcast::{Receiver, Sender},
+    sync::mpsc::Receiver,
     time::{Duration, sleep},
 };
 use tokio_tungstenite::{
@@ -13,8 +13,9 @@ use tokio_tungstenite::{
     tungstenite::{self, Message},
 };
 use tracing::{debug, error, info};
+use channelmap::ChannelMap;
 
-pub async fn ws_loop(tx: Sender<Msg>, websocket_url: String) -> Result<(), ServerError> {
+pub async fn ws_loop(channels: ChannelMap<Msg>, websocket_url: String) -> Result<(), ServerError> {
     let ws_listener = TcpListener::bind(&websocket_url).await?;
     info!("WebSockets listening on {websocket_url}");
     loop {
@@ -26,9 +27,9 @@ pub async fn ws_loop(tx: Sender<Msg>, websocket_url: String) -> Result<(), Serve
                 continue;
             }
         };
-        let rx = tx.subscribe();
+        let channels_clone = channels.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_connection(client, rx).await {
+            if let Err(e) = handle_connection(client, channels_clone).await {
                 error!("{e}");
             }
         });
@@ -41,12 +42,13 @@ async fn accept_connection(listener: &TcpListener) -> Result<TcpStream, ServerEr
     Ok(client)
 }
 
-async fn handle_connection(client: TcpStream, rx: Receiver<Msg>) -> Result<(), ServerError> {
+async fn handle_connection(client: TcpStream, channels: ChannelMap<Msg>) -> Result<(), ServerError> {
     let client = accept_async(client).await?;
     let (write, mut read) = client.split();
 
     let username = read_username(&mut read).await?;
     info!("{} connected", &username);
+    let rx = channels.add_with_buffer(&username, 10);
 
     listen_message(read, write, rx, &username).await?;
 
@@ -97,11 +99,10 @@ async fn check_message(
     rx: &mut Receiver<Msg>,
     username: &str,
 ) -> Result<(), ServerError> {
-    let msg = rx.recv().await.map_err(|_| ServerError::RecvClosed)?; // in theory RecvError::Lagged can occur, however since channel capacity is so big we shouldn't be too concerned
-    if msg.username == username {
-        let msg = &serde_json::to_string(&msg)?;
-        write.send(Message::Text(msg.into())).await?;
-        debug!("Got message {msg} for {username}");
-    }
+    let msg = rx.recv().await
+        .ok_or(ServerError::ChannelClosed)?;
+    let msg = &serde_json::to_string(&msg)?;
+    write.send(Message::Text(msg.into())).await?;
+    debug!("Got message {msg} for {username}");
     Ok(())
 }

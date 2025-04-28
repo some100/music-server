@@ -21,13 +21,9 @@ pub async fn http_listener(channels: ChannelMap<Msg>, http_url: String) -> Resul
 }
 
 async fn post_handler(State(state): State<AppState>, Json(msg): Json<Msg>) -> impl IntoResponse {
-    match state.channels.send(&msg.username, msg.clone()).await {
-        Err(ChannelError::Send(e)) => {
-            error!("{e}");
-            return StatusCode::INTERNAL_SERVER_ERROR
-        },
-        Err(ChannelError::Nonexistent) => (),
-        _ => (),
+    if let Err(ChannelError::Send(e)) = state.channels.send(&msg.username, msg.clone()).await {
+        error!("{e}");
+        return StatusCode::INTERNAL_SERVER_ERROR;
     }
     StatusCode::ACCEPTED
 }

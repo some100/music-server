@@ -1,11 +1,11 @@
 use crate::{Msg, ServerError};
+use channelmap::{ChannelMap, flume::Receiver};
 use futures_util::{
     SinkExt as _, StreamExt as _,
     stream::{SplitSink, SplitStream},
 };
 use tokio::{
     net::{TcpListener, TcpStream},
-    sync::mpsc::Receiver,
     time::{Duration, sleep},
 };
 use tokio_tungstenite::{
@@ -13,7 +13,6 @@ use tokio_tungstenite::{
     tungstenite::{self, Message},
 };
 use tracing::{debug, error, info};
-use channelmap::ChannelMap;
 
 pub async fn ws_loop(channels: ChannelMap<Msg>, websocket_url: String) -> Result<(), ServerError> {
     let ws_listener = TcpListener::bind(&websocket_url).await?;
@@ -42,7 +41,10 @@ async fn accept_connection(listener: &TcpListener) -> Result<TcpStream, ServerEr
     Ok(client)
 }
 
-async fn handle_connection(client: TcpStream, channels: ChannelMap<Msg>) -> Result<(), ServerError> {
+async fn handle_connection(
+    client: TcpStream,
+    channels: ChannelMap<Msg>,
+) -> Result<(), ServerError> {
     let client = accept_async(client).await?;
     let (write, mut read) = client.split();
 
@@ -99,9 +101,7 @@ async fn check_message(
     rx: &mut Receiver<Msg>,
     username: &str,
 ) -> Result<(), ServerError> {
-    let msg = rx.recv().await
-        .ok_or(ServerError::ChannelClosed)?;
-    let msg = &serde_json::to_string(&msg)?;
+    let msg = &serde_json::to_string(&rx.recv_async().await?)?;
     write.send(Message::Text(msg.into())).await?;
     debug!("Got message {msg} for {username}");
     Ok(())

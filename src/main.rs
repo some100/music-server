@@ -3,11 +3,11 @@ mod http;
 mod websocket;
 
 use crate::error::ServerError;
+use channelmap::ChannelMap;
 use clap::Parser;
 use serde::{Deserialize, Serialize};
+use tokio::{runtime::Runtime, task::JoinSet};
 use tracing::{Level, error, subscriber, warn};
-use tokio::task::JoinSet;
-use channelmap::ChannelMap;
 
 /// Music server that listens through HTTP POST
 #[derive(Parser)]
@@ -33,14 +33,18 @@ struct Msg {
     status_type: Option<String>,
 }
 
-#[tokio::main]
-async fn main() -> Result<(), ServerError> {
-    let mut tasks = JoinSet::new();
-
+fn main() -> Result<(), ServerError> {
     let subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
         .finish();
     subscriber::set_global_default(subscriber)?;
+    let rt = Runtime::new()?;
+    rt.block_on(run())?;
+    Ok(())
+}
+
+async fn run() -> Result<(), ServerError> {
+    let mut tasks = JoinSet::new();
 
     let args = Args::parse();
 

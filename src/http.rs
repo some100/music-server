@@ -1,7 +1,7 @@
 use crate::{Msg, ServerError};
 use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::post};
-use tokio::net::TcpListener;
 use channelmap::{ChannelMap, Error as ChannelError};
+use tokio::net::TcpListener;
 use tracing::{error, info};
 
 #[derive(Clone)]
@@ -21,7 +21,8 @@ pub async fn http_listener(channels: ChannelMap<Msg>, http_url: String) -> Resul
 }
 
 async fn post_handler(State(state): State<AppState>, Json(msg): Json<Msg>) -> impl IntoResponse {
-    if let Err(ChannelError::Send(e)) = state.channels.send(&msg.username, msg.clone()).await {
+    if let Err(ChannelError::Send(e)) = state.channels.send_async(&msg.username, msg.clone()).await
+    {
         error!("{e}");
         return StatusCode::INTERNAL_SERVER_ERROR;
     }
